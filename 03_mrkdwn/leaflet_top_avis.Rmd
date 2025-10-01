@@ -1,0 +1,194 @@
+---
+title: "TOP AVISTAGENS - INDIVÍDUOS"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: yeti
+---
+
+```{r setup, include=FALSE}
+library(here)
+library(flexdashboard)
+library(leaflet)
+library(sf)
+library(raster)
+library(htmltools)
+library(dplyr)
+
+pasta_output <- here("02_outputs")
+
+# Listar todos os indivíduos (pastas)
+individuos <- list.dirs(pasta_output, full.names = FALSE, recursive = FALSE)
+individuos <- individuos[individuos != ""]  # Remove pasta vazia se houver
+
+# Função para carregar dados de um indivíduo
+carregar_individuo <- function(ind) {
+  caminho_base <- here(pasta_output, ind)
+  
+  # Carregar dados
+  pontos <- tryCatch(st_read(here(caminho_base, "pontos.gpkg"), quiet = TRUE), error = function(e) NULL)
+  kernel <- tryCatch(raster(here(caminho_base, "kernel.tif")), error = function(e) NULL)
+  p50 <- tryCatch(st_read(here(caminho_base, "p50.gpkg"), quiet = TRUE), error = function(e) NULL)
+  p95 <- tryCatch(st_read(here(caminho_base, "p95.gpkg"), quiet = TRUE), error = function(e) NULL)
+  
+  # Transformar para WGS84 (4326) para o Leaflet
+  if (!is.null(pontos)) pontos <- st_transform(pontos, 4326)
+  if (!is.null(kernel)) kernel <- projectRaster(kernel, crs = crs("+init=epsg:4326"))
+  if (!is.null(p50)) p50 <- st_transform(p50, 4326)
+  if (!is.null(p95)) p95 <- st_transform(p95, 4326)
+  
+  list(
+    pontos = pontos,
+    kernel = kernel,
+    p50 = p50,
+    p95 = p95
+  )
+}
+
+# Carregar todos os indivíduos
+dados_individuos <- list()
+for (ind in individuos) {
+  dados_individuos[[ind]] <- carregar_individuo(ind)
+}
+
+# Configurações de cores
+cores <- list(
+  pontos = "yellow", kernel = "red", p50 = "blue", p95 = "green"
+)
+opacidade <- 0.4
+```
+
+```{r}
+# Criar mapa base vazio
+mapa_base <- leaflet() %>%
+  addProviderTiles("CartoDB.Positron", group = "Light") %>%
+  addProviderTiles("Esri.WorldImagery", group = "Satélite") %>%
+  addLayersControl(
+    baseGroups = c("Satélite", "Light"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addScaleBar(position = "bottomleft")
+
+# Configurações de cores - cores distintas para cada indivíduo
+cores_individuos <- list(
+  "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FECA57", "#FF9FF3",
+  "#54A0FF", "#5F27CD", "#00D2D3", "#FF9F43", "#10AC84", "#EE5A24",
+  "#0984E3", "#A29BFE", "#FD79A8", "#E17055", "#00B894", "#E84393",
+  "#6C5CE7", "#FDCB6E", "#E17055", "#00CEC9", "#FF7675", "#74B9FF",
+  "#55EFC4", "#A29BFE"
+)
+
+# Atribuir cores aos indivíduos
+nomes_cores <- list()
+for (i in seq_along(individuos)) {
+  nomes_cores[[individuos[i]]] <- cores_individuos[[i]]
+}
+
+# Adicionar cada indivíduo ao mapa
+for (i in seq_along(individuos)) {
+  ind <- individuos[i]
+  cor_ind <- nomes_cores[[ind]]
+  dados <- dados_individuos[[ind]]
+  
+  if (!is.null(dados$kernel)) {
+    mapa_base <- mapa_base %>%
+      addRasterImage(dados$kernel, 
+                     colors = "Reds", opacity = opacidade,
+                     group = paste(ind, "- Kernel"))
+  }
+  
+  if (!is.null(dados$p50)) {
+    mapa_base <- mapa_base %>%
+      addPolygons(data = dados$p50,
+                  color = cor_ind, fillColor = cor_ind,
+                  fillOpacity = opacidade, weight = 2,
+                  group = paste(ind, "- P50"),
+                  popup = paste(ind, "- Percentil 50"))
+  }
+  
+  if (!is.null(dados$p95)) {
+    mapa_base <- mapa_base %>%
+      addPolygons(data = dados$p95,
+                  color = cor_ind, fillColor = cor_ind,
+                  fillOpacity = opacidade, weight = 2,
+                  group = paste(ind, "- P95"),
+                  popup = paste(ind, "- Percentil 95"))
+  }
+  
+  if (!is.null(dados$pontos)) {
+    mapa_base <- mapa_base %>%
+      addCircleMarkers(data = dados$pontos,
+                       color = cor_ind, fillColor = cor_ind,
+                       fillOpacity = 0.8, radius = 6, weight = 2,
+                       group = paste(ind, "- Pontos"),
+                       popup = ~paste0(
+                         "<strong>Indivíduo: ", ind, "</strong><br>",
+                         "Data: ", data, "<br>",
+                         "Grupo: ", grupo, "<br>",
+                         "Tamanho grupo: ", ifelse(is.na(tam_grupo), "NA", tam_grupo), "<br>",
+                         "Adultos: ", n_adultos, " | Juv: ", n_juvenis, " | Inf: ", n_infantes, "<br>",
+                         ifelse(!is.na(Obs_grupo) & Obs_grupo != "", paste0("Obs: ", Obs_grupo), "")
+                       ))
+  }
+}
+
+# Atualizar controle de layers com todos os grupos
+grupos_overlay <- c()
+for (ind in individuos) {
+  grupos_overlay <- c(grupos_overlay, 
+                     paste(ind, "- Pontos"),
+                     paste(ind, "- Kernel"), 
+                     paste(ind, "- P50"),
+                     paste(ind, "- P95"))
+}
+
+mapa_base <- mapa_base %>%
+  addLayersControl(
+    baseGroups = c("Satélite", "Light"),
+    overlayGroups = grupos_overlay,
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  hideGroup(grupos_overlay)  # Começar com todas ocultas
+```
+
+# Mapa
+
+```{r}
+mapa_base
+```
+
+
+# Informações do Mapa
+column
+-------------
+
+### Legenda por Tipo
+- 🟡 Pontos: Locais de avistagem
+- 🔴 Kernel: Densidade de uso
+- 🔵 P50: Área central (50%)
+- 🟢 P95: Área de uso total (95%)
+
+column
+-------------
+
+### Como Usar
+1. Selecione um indivíduo no menu acima
+2. Use o controle ☰ para ligar/desligar camadas
+3. Comece com "Todos" para ver overview
+4. Selecione individual para focar em um
+
+column
+-------------
+
+### Infos
+- **Total de indivíduos:** `r length(individuos)`
+- **Arquivos por indivíduo:**
+  - Pontos de avistagem (.gpkg)
+  - Kernel de densidade (.tif)
+  - Polígono P50 (.gpkg)
+  - Polígono P95 (.gpkg)
+- **Sobre a análise:**
+  - kernel density para padrões de uso de espaço de cada indivíduo
+  - Tipo de suavização: Normal (gaussiana)
+  - Parâmetro sigma da suavização: 500m
