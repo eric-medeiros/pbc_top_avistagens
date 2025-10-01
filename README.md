@@ -11,22 +11,24 @@ Este projeto realiza análises de kernel density para mapear e visualizar os pad
 ```
 pbc_top_avistagens/
 ├── 00_data/
+│   ├── 00_dados_brutos/
+│   │   └── Tabela_filtrada_Wesley.xlsx
 │   ├── 01_tratados_excel/
 │   │   └── Dados_Top_Avistagens.xlsx
 │   └── 02_georefs/
 │       └── amostragem_area.gpkg
+├── 01_scripts/
+│   └── top_avistagens.R
 ├── 02_outputs/
-│   └── top_avistagens/
-│       ├── CN001/
-│       │   ├── pontos.gpkg
-│       │   ├── kernel.tif
-│       │   ├── p50.gpkg
-│       │   └── p95.gpkg
-│       ├── CN002/
-│       └── ... (demais indivíduos)
-├── scripts/
-│   └── processamento_dados.R
-├── dashboard_top_avistagens.Rmd
+│   └── CN001/
+│   │   ├── pontos.gpkg
+│   │   ├── kernel.tif
+│   │   ├── p50.gpkg
+│   │   ├── p95.gpkg
+│   └── CN002/
+│   └── ... (demais indivíduos)
+├── 03_mrkdwn/
+│   └── leaflet_top_avis.Rmd
 └── README.md
 ```
 
@@ -92,12 +94,12 @@ Cada indivíduo recebe uma cor única para fácil identificação no mapa.
 
 ### Processar Dados
 ```r
-source("01_scripts/processamento_dados.R")
+source("01_scripts/top_avistagens.R")
 ```
 
 ### Gerar Dashboard
 ```r
-rmarkdown::render("dashboard_top_avistagens.Rmd")
+rmarkdown::render("leaflet_top_avis.Rmd")
 ```
 
 ## 📈 Resultados Esperados
