@@ -116,4 +116,4 @@ rmarkdown::render("leaflet_top_avis.Rmd")
 
 ---
 
-*Projeto desenvolvido para o Programa de Monitoramento de Biodiversidade Costeira*
+*Projeto desenvolvido como auxílio no TCC de Wesley...*
