@@ -15,22 +15,26 @@ library(sf)
 library(raster)
 library(htmltools)
 library(dplyr)
+library(stringr)
+
 
 pasta_output <- here("02_outputs")
 
 # Listar todos os indivíduos (pastas)
-individuos <- list.dirs(pasta_output, full.names = FALSE, recursive = FALSE)
-individuos <- individuos[individuos != ""]  # Remove pasta vazia se houver
+individuos <- list.files(pasta_output, full.names = FALSE, recursive = FALSE) %>% str_remove_all("kernel_|pontos_|p50_|p95_|.gpkg|.tif") %>% unique()
 
 # Função para carregar dados de um indivíduo
 carregar_individuo <- function(ind) {
-  caminho_base <- here(pasta_output, ind)
+  caminho_pontos <- here(pasta_output, paste0("pontos_", ind, ".gpkg"))
+  caminho_kernel <- here(pasta_output, paste0("kernel_", ind, ".tif"))
+  caminho_p50 <- here(pasta_output, paste0("p50_", ind, ".gpkg"))
+  caminho_p95 <- here(pasta_output, paste0("p95_", ind, ".gpkg"))
   
   # Carregar dados
-  pontos <- tryCatch(st_read(here(caminho_base, "pontos.gpkg"), quiet = TRUE), error = function(e) NULL)
-  kernel <- tryCatch(raster(here(caminho_base, "kernel.tif")), error = function(e) NULL)
-  p50 <- tryCatch(st_read(here(caminho_base, "p50.gpkg"), quiet = TRUE), error = function(e) NULL)
-  p95 <- tryCatch(st_read(here(caminho_base, "p95.gpkg"), quiet = TRUE), error = function(e) NULL)
+  pontos <- tryCatch(st_read(caminho_pontos, quiet = TRUE), error = function(e) NULL)
+  kernel <- tryCatch(raster(caminho_kernel), error = function(e) NULL)
+  p50 <- tryCatch(st_read(caminho_p50, quiet = TRUE), error = function(e) NULL)
+  p95 <- tryCatch(st_read(caminho_p95, quiet = TRUE), error = function(e) NULL)
   
   # Transformar para WGS84 (4326) para o Leaflet
   if (!is.null(pontos)) pontos <- st_transform(pontos, 4326)
@@ -64,10 +68,6 @@ opacidade <- 0.4
 mapa_base <- leaflet() %>%
   addProviderTiles("CartoDB.Positron", group = "Light") %>%
   addProviderTiles("Esri.WorldImagery", group = "Satélite") %>%
-  addLayersControl(
-    baseGroups = c("Satélite", "Light"),
-    options = layersControlOptions(collapsed = FALSE)
-  ) %>%
   addScaleBar(position = "bottomleft")
 
 # Configurações de cores - cores distintas para cada indivíduo
@@ -75,8 +75,8 @@ cores_individuos <- list(
   "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FECA57", "#FF9FF3",
   "#54A0FF", "#5F27CD", "#00D2D3", "#FF9F43", "#10AC84", "#EE5A24",
   "#0984E3", "#A29BFE", "#FD79A8", "#E17055", "#00B894", "#E84393",
-  "#6C5CE7", "#FDCB6E", "#E17055", "#00CEC9", "#FF7675", "#74B9FF",
-  "#55EFC4", "#A29BFE"
+  "#6C5CE7", "#FDCB6E", "#00CEC9", "#FF7675", "#74B9FF", "#55EFC4",
+  "#F368E0", "#1DD1A1"
 )
 
 # Atribuir cores aos indivíduos
@@ -92,35 +92,53 @@ for (i in seq_along(individuos)) {
   dados <- dados_individuos[[ind]]
   
   if (!is.null(dados$kernel)) {
+    pal <- colorNumeric(
+      palette = c("blue", "cyan", "yellow", "red"),  # gradiente estilo temperatura
+      domain = values(dados$kernel),
+      na.color = "transparent"
+    )
     mapa_base <- mapa_base %>%
-      addRasterImage(dados$kernel, 
-                     colors = "Reds", opacity = opacidade,
-                     group = paste(ind, "- Kernel"))
+      addRasterImage(
+        dados$kernel,
+        colors = pal,
+        opacity = opacidade,  # usa o valor global que você já definiu
+        group = paste(ind, "- Kernel")
+      )
   }
   
   if (!is.null(dados$p50)) {
     mapa_base <- mapa_base %>%
-      addPolygons(data = dados$p50,
-                  color = cor_ind, fillColor = cor_ind,
-                  fillOpacity = opacidade, weight = 2,
-                  group = paste(ind, "- P50"),
-                  popup = paste(ind, "- Percentil 50"))
+      addPolygons(
+        data = dados$p50,
+        color = "black",           # cor da linha
+        fillColor = cor_ind,       # sem preenchimento
+        fillOpacity = 0.05,        # totalmente transparente
+        weight = 2,                # espessura da linha
+        dashArray = "5,5",         # linha tracejada
+        group = paste(ind, "- P50"),
+        popup = paste(ind, "- Percentil 50")
+      )
   }
   
   if (!is.null(dados$p95)) {
     mapa_base <- mapa_base %>%
-      addPolygons(data = dados$p95,
-                  color = cor_ind, fillColor = cor_ind,
-                  fillOpacity = opacidade, weight = 2,
-                  group = paste(ind, "- P95"),
-                  popup = paste(ind, "- Percentil 95"))
+      addPolygons(
+        data = dados$p95,
+        color = "black",          # contorno preto
+        fillColor = cor_ind,      # leve preenchimento
+        fillOpacity = 0.05,       # transparente
+        weight = 1,
+        dashArray = "1,5",        # linha pontilhada
+        group = paste(ind, "- P95"),
+        popup = paste(ind, "- Percentil 95")
+      )
   }
   
   if (!is.null(dados$pontos)) {
     mapa_base <- mapa_base %>%
       addCircleMarkers(data = dados$pontos,
                        color = cor_ind, fillColor = cor_ind,
-                       fillOpacity = 0.8, radius = 6, weight = 2,
+                       fillOpacity = 0.8, radius = 4, weight = 2,
                        group = paste(ind, "- Pontos"),
                        popup = ~paste0(
                          "<strong>Indivíduo: ", ind, "</strong><br>",
@@ -137,15 +155,15 @@ for (i in seq_along(individuos)) {
 grupos_overlay <- c()
 for (ind in individuos) {
   grupos_overlay <- c(grupos_overlay, 
-                     paste(ind, "- Pontos"),
-                     paste(ind, "- Kernel"), 
-                     paste(ind, "- P50"),
-                     paste(ind, "- P95"))
+                      paste(ind, "- Pontos"),
+                      paste(ind, "- Kernel"), 
+                      paste(ind, "- P50"),
+                      paste(ind, "- P95"))
 }
 
 mapa_base <- mapa_base %>%
   addLayersControl(
-    baseGroups = c("Satélite", "Light"),
+    baseGroups = c("Light", "Satélite"),
     overlayGroups = grupos_overlay,
     options = layersControlOptions(collapsed = FALSE)
   ) %>%
@@ -184,11 +202,11 @@ column
 ### Infos
 - **Total de indivíduos:** `r length(individuos)`
 - **Arquivos por indivíduo:**
-  - Pontos de avistagem (.gpkg)
-  - Kernel de densidade (.tif)
-  - Polígono P50 (.gpkg)
-  - Polígono P95 (.gpkg)
+- Pontos de avistagem (.gpkg)
+- Kernel de densidade (.tif)
+- Polígono P50 (.gpkg)
+- Polígono P95 (.gpkg)
 - **Sobre a análise:**
-  - kernel density para padrões de uso de espaço de cada indivíduo
-  - Tipo de suavização: Normal (gaussiana)
-  - Parâmetro sigma da suavização: 500m
+- kernel density para padrões de uso de espaço de cada indivíduo
+- Tipo de suavização: Normal (gaussiana)
+- Parâmetro sigma da suavização: 500m
