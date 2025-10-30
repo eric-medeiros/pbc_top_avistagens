@@ -36,7 +36,10 @@ dados_sf <-
   dados_excel %>%
   filter(!is.na(lng)) %>%
   st_as_sf(coords = c("lng","lat"), crs = 4326) %>% 
-  st_transform(crs = 31983)
+  st_transform(crs = 31983) %>%
+  mutate(tam = case_when(!is.na(as.numeric(tam_grupo)) ~ as.numeric(tam_grupo),
+                         !is.na(as.numeric(tam_min)) ~ (as.numeric(tam_min) + as.numeric(tam_max))/2,
+                         .default = as.numeric("NA")))
 
 ids <- unique(dados_sf$ID)
 
@@ -50,14 +53,13 @@ for (i in seq(length(ids))) {
   dados_ppp <- 
     dados_sf_ind %>%
     st_intersection(area_sf) %>%
-    group_by(geometry) %>%
-    summarise(count = n()) %>%
     as.ppp(W = win)
-  
+
   # rodar o kernel density com pesos
   dens <- density.ppp(dados_ppp, 
                       sigma = 500, # raio do kernel em metros
-                      edge = TRUE)
+                      edge = TRUE,
+                      weights = marks(dados_ppp)$tam)
   
   # converte para raster do pacote terra
   dens_raster <- rast(dens)
@@ -82,12 +84,10 @@ for (i in seq(length(ids))) {
     as.polygons(mascara_50, dissolve = TRUE) %>%
     st_as_sf()
   
-  caminho_pontos <- here(pasta_output, ids[i], "pontos.gpkg")
-  caminho_kernel <- here(pasta_output, ids[i], "kernel.tif")
-  caminho_p95 <- here(pasta_output, ids[i], "p95.gpkg")
-  caminho_p50 <- here(pasta_output, ids[i], "p50.gpkg")
-  
-  if (!dir.exists(here(pasta_output, ids[i]))) { dir.create(here(pasta_output, ids[i])) }
+  caminho_pontos <- here(pasta_output, paste0("pontos_", ids[i],".gpkg"))
+  caminho_kernel <- here(pasta_output, paste0("kernel_", ids[i],".tif"))
+  caminho_p95 <- here(pasta_output, paste0("p95_", ids[i],".gpkg"))
+  caminho_p50 <- here(pasta_output, paste0("p50_", ids[i],".gpkg"))
   
   # salva pontos de dados, raster de kernel e polígonos de p50 e p95 como arquivo georreferenciado
   dados_sf_ind %>% st_write(caminho_pontos, delete_dsn = TRUE)
