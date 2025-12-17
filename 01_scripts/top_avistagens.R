@@ -58,8 +58,7 @@ for (i in seq(length(ids))) {
   # rodar o kernel density com pesos
   dens <- density.ppp(dados_ppp, 
                       sigma = 500, # raio do kernel em metros
-                      edge = TRUE,
-                      weights = marks(dados_ppp)$tam)
+                      edge = TRUE)
   
   # converte para raster do pacote terra
   dens_raster <- rast(dens)
