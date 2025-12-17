@@ -1,0 +1,136 @@
+---
+title: "AVISTAGENS - INDIVÍDUOS"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: yeti
+---
+
+```{r setup, include=FALSE}
+library(here)
+library(flexdashboard)
+library(leaflet)
+library(sf)
+library(dplyr)
+library(stringr)
+
+pasta_output <- here("02_outputs")
+
+# Listar indivíduos
+
+individuos <- list.files(pasta_output, full.names = FALSE) |>
+str_remove_all("pontos_|.gpkg") |>
+unique()
+
+# Função para carregar pontos
+
+carregar_pontos <- function(ind) {
+caminho <- here(pasta_output, paste0("pontos_", ind, ".gpkg"))
+tryCatch(
+st_read(caminho, quiet = TRUE) |> st_transform(4326),
+error = function(e) NULL
+)
+}
+
+# Carregar todos os pontos
+
+pontos_individuos <- list()
+for (ind in individuos) {
+pontos_individuos[[ind]] <- carregar_pontos(ind)
+}
+
+# Cores automáticas por indivíduo
+
+cores_individuos <- setNames(
+grDevices::hcl.colors(length(individuos), "Dark 3"),
+individuos
+)
+
+```
+
+```{r}
+
+mapa_base <- leaflet() %>%
+  addProviderTiles("CartoDB.Positron", group = "Light") %>%
+  addProviderTiles("Esri.WorldImagery", group = "Satélite") %>%
+  addScaleBar(position = "bottomleft")
+
+# adicionar pontos: 1 layer por indivíduo
+for (ind in individuos) {
+  dados <- pontos_individuos[[ind]]
+  
+  if (!is.null(dados)) {
+    mapa_base <- mapa_base %>%
+      addCircleMarkers(
+        data = dados,
+        color = cores_individuos[[ind]],
+        fillColor = cores_individuos[[ind]],
+        fillOpacity = 0.7,
+        radius = 3,
+        weight = 1,
+        group = ind,   # 👈 UM GROUP POR INDIVÍDUO
+        popup = ~paste0(
+          "<strong>Indivíduo:</strong> ", ind, "<br>",
+          "<strong>Data:</strong> ", data, "<br>",
+          "<strong>Grupo:</strong> ", grupo, "<br>",
+          "<strong>Tamanho grupo:</strong> ",
+          ifelse(is.na(tam_grupo), "NA", tam_grupo)
+        )
+      )
+  }
+}
+
+# controle de camadas (254 entries)
+mapa_base <- mapa_base %>%
+  addLayersControl(
+    baseGroups = c("Light", "Satélite"),
+    overlayGroups = individuos,
+    options = layersControlOptions(collapsed = TRUE)
+  ) %>%
+  hideGroup(individuos)  # 👈 começa tudo desligado
+
+mapa_base
+
+```
+
+# Mapa
+
+```{r}
+mapa_base
+```
+
+
+# Informações do Mapa
+column
+-------------
+
+### Legenda por Tipo
+- 🟡 Pontos: Locais de avistagem
+- 🔴 Kernel: Densidade de uso
+- 🔵 P50: Área central (50%)
+- 🟢 P95: Área de uso total (95%)
+
+column
+-------------
+
+### Como Usar
+1. Selecione um indivíduo no menu acima
+2. Use o controle ☰ para ligar/desligar camadas
+3. Comece com "Todos" para ver overview
+4. Selecione individual para focar em um
+
+column
+-------------
+
+### Infos
+- **Total de indivíduos:** `r length(individuos)`
+- **Arquivos por indivíduo:**
+- Pontos de avistagem (.gpkg)
+- Kernel de densidade (.tif)
+- Polígono P50 (.gpkg)
+- Polígono P95 (.gpkg)
+- **Sobre a análise:**
+- kernel density para padrões de uso de espaço de cada indivíduo
+- Tipo de suavização: Normal (gaussiana)
+- Parâmetro sigma da suavização: 500m
